@@ -7,6 +7,7 @@ import '../data/puzzles.dart';
 import '../widgets/board_widget.dart';
 import '../widgets/piece_widget.dart';
 import '../widgets/timer_widget.dart';
+import '../services/sound_service.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Puzzle> puzzles;
@@ -76,6 +77,7 @@ class _GameScreenState extends State<GameScreen> {
         if (newSecs <= 0) {
           _state = _state.copyWith(remainingSeconds: 0, status: GameStatus.failed);
           _timer?.cancel();
+          SoundService.playFail();
         } else {
           _state = _state.copyWith(remainingSeconds: newSecs);
         }
@@ -84,6 +86,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _onDrop(Piece piece, int row, int col) {
+    SoundService.playPlace();
     setState(() {
       final newPlaced = [
         ..._state.placedPieces,
@@ -98,6 +101,7 @@ class _GameScreenState extends State<GameScreen> {
       if (_state.isSolved) {
         _timer?.cancel();
         _state = _state.copyWith(status: GameStatus.success);
+        SoundService.playSuccess();
         _scheduleAutoNext();
       }
     });
@@ -171,6 +175,7 @@ class _GameScreenState extends State<GameScreen> {
               onDrop: _onDrop,
               onRemove: (pp) {
                 if (_state.status != GameStatus.playing) return;
+                SoundService.playRemove();
                 setState(() {
                   final newPlaced = _state.placedPieces.where((p) => p != pp).toList();
                   final newAvailable = [..._state.availablePieces, pp.piece];
