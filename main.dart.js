@@ -64077,8 +64077,8 @@ $2(a,b){var s,r,q,p,o,n,m,l,k=null,j=b.b,i=this.a,h=i.a.c,g=i.d
 g===$&&A.a()
 g=h[g]
 s=j*0.96/g.c
-r=(b.d-180)/g.b
-q=B.c.dt(s<r?s:r,24,80)
+r=b.d*0.5/g.b
+q=B.c.dt(s<r?s:r,20,72)
 h=i.a.c[i.d]
 p=q*h.b
 g=i.e
