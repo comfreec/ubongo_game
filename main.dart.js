@@ -20596,11 +20596,13 @@ _.d=b
 _.e=c
 _.f=d
 _.a=e},
-pS:function pS(a,b,c,d){var _=this
-_.e=a
-_.f=b
-_.r=c
-_.a=d},
+pS:function pS(a,b,c,d,e,f){var _=this
+_.c=a
+_.d=b
+_.e=c
+_.f=d
+_.r=e
+_.a=f},
 An:function An(a,b,c,d,e,f){var _=this
 _.c=a
 _.d=b
@@ -64792,7 +64794,7 @@ $0(){return this.a.d=A.ajm()},
 $S:0}
 A.a5F.prototype={
 $2(a,b){var s=this.b[b],r=s.e.length
-return new A.pS(r<=3,r>=5,new A.a5u(this.a,s),null)},
+return new A.pS(b+1,s,r<=3,r>=5,new A.a5u(this.a,s),null)},
 $S:421}
 A.a5u.prototype={
 $0(){return this.a.a_G(this.b)},
@@ -64803,17 +64805,19 @@ m=A.Ot(m,p?1.5:1)
 s=p?r.e:B.h0
 return A.o4(q,A.i8(A.hF(r.c,A.hG(q,q,s,q,q,q,q,q,q,q,q,13,q,q,p?B.b6:B.y,q,q,!0,q,q,q,q,q,q,q,q)),new A.cQ(o,q,m,n,q,q,B.ag),q,q,B.AC,q),B.ap,!1,q,q,q,q,q,q,q,q,q,q,q,q,q,r.f,q,q,q)}}
 A.pS.prototype={
-L(a){var s,r,q,p,o,n,m=this,l=null,k=m.e
-if(k)s=B.i5
-else s=m.f?B.q1:B.q0
-if(k)r="\uc27d\uc74c"
-else r=m.f?"\uc5b4\ub824\uc6c0":"\ubcf4\ud1b5"
-k=A.fo(16)
+L(a){var s,r,q,p,o,n,m,l,k=this,j=null,i=k.e
+if(i)s=B.i5
+else s=k.f?B.q1:B.q0
+if(i)r="\uc27d\uc74c"
+else r=k.f?"\uc5b4\ub824\uc6c0":"\ubcf4\ud1b5"
+i=A.fo(16)
 q=A.Ot(B.h_,1)
 p=B.cd.l1(0.2)
 o=A.fo(12)
-n=t.F
-return A.o4(l,A.i8(A.hA(A.c([A.i8(A.r0(A.hF("$index",B.LI),l,l),new A.cQ(p,l,l,o,l,l,B.ag),48,l,l,48),B.IV,A.jk(A.c([A.hF("\ud37c\uc990 $index",B.Kx),A.hA(A.c([A.hF("${puzzle.rows}x${puzzle.cols}  |  \uc870\uac01 ${puzzle.pieceIds.length}\uac1c  |  ",B.ME),A.hF(r,A.hG(l,l,s,l,l,l,l,l,l,l,l,13,l,l,l,l,l,!0,l,l,l,l,l,l,l,l))],n),B.N,B.X,B.aM,0)],n),B.b3,B.X,B.aM),B.J2,B.Bi],n),B.N,B.X,B.aM,0),new A.cQ(B.h3,l,q,k,l,l,B.ag),l,B.Ay,B.AE,l),B.ap,!1,l,l,l,l,l,l,l,l,l,l,l,l,l,m.r,l,l,l)}}
+n=""+k.c
+m=k.d
+l=t.F
+return A.o4(j,A.i8(A.hA(A.c([A.i8(A.r0(A.hF(n,B.LI),j,j),new A.cQ(p,j,j,o,j,j,B.ag),48,j,j,48),B.IV,A.jk(A.c([A.hF("\ud37c\uc990 "+n,B.Kx),A.hA(A.c([A.hF(""+m.b+"x"+m.c+"  |  \uc870\uac01 "+m.e.length+"\uac1c  |  ",B.ME),A.hF(r,A.hG(j,j,s,j,j,j,j,j,j,j,j,13,j,j,j,j,j,!0,j,j,j,j,j,j,j,j))],l),B.N,B.X,B.aM,0)],l),B.b3,B.X,B.aM),B.J2,B.Bi],l),B.N,B.X,B.aM,0),new A.cQ(B.h3,j,q,i,j,j,B.ag),j,B.Ay,B.AE,j),B.ap,!1,j,j,j,j,j,j,j,j,j,j,j,j,j,k.r,j,j,j)}}
 A.An.prototype={
 Gl(a,b){var s,r,q,p,o,n,m,l
 for(s=this.d,r=s.length,q=0;q<s.length;s.length===r||(0,A.u)(s),++q){p=s[q]
