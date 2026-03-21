@@ -1,5 +1,8 @@
 {
   "buildCommand": "C:\\flutter\\bin\\flutter.bat build web --release --no-wasm-dry-run",
   "outputDirectory": "build/web",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
