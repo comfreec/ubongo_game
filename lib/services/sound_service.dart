@@ -1,4 +1,5 @@
 import 'dart:js_interop';
+import 'settings_service.dart';
 
 @JS('AudioContext')
 extension type AudioContext._(JSObject _) implements JSObject {
@@ -41,6 +42,7 @@ class SoundService {
 
   /// 조각 배치: 짧고 경쾌한 클릭음
   static void playPlace() {
+    if (!SettingsService.instance.soundEnabled) return;
     try {
       final ctx = _getCtx();
       final osc = OscillatorNode._(ctx.createOscillator());
@@ -62,6 +64,7 @@ class SoundService {
 
   /// 조각 제거: 낮고 짧은 소리
   static void playRemove() {
+    if (!SettingsService.instance.soundEnabled) return;
     try {
       final ctx = _getCtx();
       final osc = OscillatorNode._(ctx.createOscillator());
@@ -83,6 +86,7 @@ class SoundService {
 
   /// 퍼즐 성공: 밝고 상승하는 3음 팡파레
   static void playSuccess() {
+    if (!SettingsService.instance.soundEnabled) return;
     try {
       final ctx = _getCtx();
       final now = ctx.currentTime;
@@ -109,6 +113,7 @@ class SoundService {
 
   /// 시간 초과: 낮고 하강하는 실패음
   static void playFail() {
+    if (!SettingsService.instance.soundEnabled) return;
     try {
       final ctx = _getCtx();
       final osc = OscillatorNode._(ctx.createOscillator());

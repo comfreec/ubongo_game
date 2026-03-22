@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/piece.dart';
+import 'piece_painter.dart';
 
 class PieceDragData {
   final Piece piece;
@@ -29,36 +30,45 @@ class PieceWidget extends StatefulWidget {
   State<PieceWidget> createState() => _PieceWidgetState();
 }
 
-class _PieceWidgetState extends State<PieceWidget> {
+class _PieceWidgetState extends State<PieceWidget>
+    with SingleTickerProviderStateMixin {
   late Piece _current;
   bool _isDragging = false;
   int _grabRow = 0;
   int _grabCol = 0;
 
+  late AnimationController _scaleCtrl;
+  late Animation<double> _scaleAnim;
+
   @override
   void initState() {
     super.initState();
     _current = widget.piece;
+    _scaleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+    );
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.12).animate(
+      CurvedAnimation(parent: _scaleCtrl, curve: Curves.easeOut),
+    );
   }
 
   @override
   void didUpdateWidget(PieceWidget old) {
     super.didUpdateWidget(old);
-    if (old.piece.id != widget.piece.id) {
+    if (old.piece.instanceId != widget.piece.instanceId) {
       _current = widget.piece;
     }
   }
 
-  void _rotateCW() {
-    setState(() => _current = _current.rotate());
-    widget.onTransform?.call(_current);
+  @override
+  void dispose() {
+    _scaleCtrl.dispose();
+    super.dispose();
   }
 
-  void _rotateCCW() {
-    // 반시계 = 시계방향 3번
-    setState(() {
-      _current = _current.rotate().rotate().rotate();
-    });
+  void _rotateCW() {
+    setState(() => _current = _current.rotate());
     widget.onTransform?.call(_current);
   }
 
@@ -67,37 +77,29 @@ class _PieceWidgetState extends State<PieceWidget> {
     widget.onTransform?.call(_current);
   }
 
-  Widget _buildGrid({double opacity = 1.0}) {
+  void _rotateCCW() {
+    setState(() => _current = _current.rotate().rotate().rotate());
+    widget.onTransform?.call(_current);
+  }
+
+  Size _pieceSize() {
     final rows = _current.maxRow + 1;
     final cols = _current.maxCol + 1;
-    final cellSet = {for (final c in _current.cells) '${c.row},${c.col}'};
-    final cs = widget.cellSize;
+    return Size(cols * widget.cellSize, rows * widget.cellSize);
+  }
 
-    return Opacity(
-      opacity: opacity,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(rows, (r) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(cols, (c) {
-              final filled = cellSet.contains('$r,$c');
-              return Container(
-                width: cs,
-                height: cs,
-                decoration: BoxDecoration(
-                  color: filled ? _current.color : Colors.transparent,
-                  borderRadius: filled ? BorderRadius.circular(4) : BorderRadius.zero,
-                ),
-              );
-            }),
-          );
-        }),
+  Widget _buildPainter({double opacity = 1.0}) {
+    final sz = _pieceSize();
+    return CustomPaint(
+      size: sz,
+      painter: PiecePainter(
+        piece: _current,
+        cellSize: widget.cellSize,
+        opacity: opacity,
       ),
     );
   }
 
-  // 탭한 로컬 위치로 어느 셀을 잡았는지 계산
   void _calcGrabCell(RenderBox box, Offset globalPos) {
     final local = box.globalToLocal(globalPos);
     final cs = widget.cellSize;
@@ -119,20 +121,31 @@ class _PieceWidgetState extends State<PieceWidget> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 조각 그리드 (드래그 가능)
         GestureDetector(
           onTap: _isDragging ? null : _rotateCW,
           onLongPress: _isDragging ? null : _flip,
           child: Draggable<PieceDragData>(
             data: PieceDragData(piece: _current, grabRow: _grabRow, grabCol: _grabCol),
-            onDragStarted: () => setState(() => _isDragging = true),
-            onDragEnd: (_) => setState(() => _isDragging = false),
-            onDraggableCanceled: (v, o) => setState(() => _isDragging = false),
+            onDragStarted: () {
+              setState(() => _isDragging = true);
+              _scaleCtrl.forward();
+            },
+            onDragEnd: (_) {
+              setState(() => _isDragging = false);
+              _scaleCtrl.reverse();
+            },
+            onDraggableCanceled: (_, __) {
+              setState(() => _isDragging = false);
+              _scaleCtrl.reverse();
+            },
             feedback: Material(
               color: Colors.transparent,
-              child: _buildGrid(opacity: 0.85),
+              child: ScaleTransition(
+                scale: _scaleAnim,
+                child: _buildPainter(opacity: 0.9),
+              ),
             ),
-            childWhenDragging: _buildGrid(opacity: 0.3),
+            childWhenDragging: _buildPainter(opacity: 0.25),
             child: MouseRegion(
               cursor: SystemMouseCursors.grab,
               child: Listener(
@@ -141,13 +154,12 @@ class _PieceWidgetState extends State<PieceWidget> {
                   if (box == null) return;
                   _calcGrabCell(box, event.position);
                 },
-                child: _buildGrid(),
+                child: _buildPainter(),
               ),
             ),
           ),
         ),
         const SizedBox(height: 4),
-        // 변환 버튼
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [

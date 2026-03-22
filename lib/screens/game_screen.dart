@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/piece.dart';
 import '../models/puzzle.dart';
 import '../models/game_state.dart';
@@ -7,8 +8,10 @@ import '../data/puzzles.dart';
 import '../widgets/board_widget.dart';
 import '../widgets/piece_widget.dart';
 import '../widgets/timer_widget.dart';
+import '../widgets/confetti_widget.dart';
 import '../services/sound_service.dart';
 import '../services/score_service.dart';
+import '../l10n/app_strings.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Puzzle> puzzles;
@@ -37,6 +40,13 @@ class _GameScreenState extends State<GameScreen> {
   // undo 스택: 각 원소는 (placedPieces, availablePieces) 스냅샷
   final List<({List<PlacedPiece> placed, List<Piece> available})> _undoStack = [];
 
+  // 힌트: 퍼즐당 1회, 힌트로 배치된 조각 instanceId
+  bool _hintUsed = false;
+  String? _hintPieceId; // 힌트 강조 표시용
+
+  // 신기록 여부
+  bool _isNewRecord = false;
+
   // 조각 수 기준 타이머
   int get _timerSeconds {
     final count = _puzzle.pieceIds.length;
@@ -58,6 +68,9 @@ class _GameScreenState extends State<GameScreen> {
   void _initGame() {
     _autoNextTimer?.cancel();
     _undoStack.clear();
+    _hintUsed = false;
+    _hintPieceId = null;
+    _isNewRecord = false;
 
     int counter = 0;
     final pieces = _puzzle.pieceIds.map((id) {
@@ -100,6 +113,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _onDrop(Piece piece, int row, int col) {
+    HapticFeedback.lightImpact();
     SoundService.playPlace();
     setState(() {
       // undo 스택에 현재 상태 저장
@@ -118,7 +132,9 @@ class _GameScreenState extends State<GameScreen> {
         _timer?.cancel();
         _state = _state.copyWith(status: GameStatus.success);
         SoundService.playSuccess();
-        ScoreService.saveBest(_puzzle.id, _state.remainingSeconds);
+        ScoreService.saveBest(_puzzle.id, _state.remainingSeconds).then((isNew) {
+          if (mounted && isNew) setState(() => _isNewRecord = true);
+        });
         _scheduleAutoNext();
       }
     });
@@ -148,6 +164,151 @@ class _GameScreenState extends State<GameScreen> {
         availablePieces: snap.available,
       );
     });
+  }
+
+  /// 힌트: 남은 조각 중 하나를 올바른 위치에 배치
+  void _useHint() {
+    if (_hintUsed || _state.availablePieces.isEmpty) return;
+
+    // 현재 보드 상태 구성
+    final board = List.generate(
+      _puzzle.rows,
+      (r) => List.generate(_puzzle.cols, (c) => _puzzle.grid[r][c] ? 0 : -1),
+    );
+    // 이미 배치된 조각들 마킹
+    for (final pp in _state.placedPieces) {
+      for (final cell in pp.piece.cells) {
+        final r = pp.row + cell.row;
+        final c = pp.col + cell.col;
+        if (r >= 0 && r < _puzzle.rows && c >= 0 && c < _puzzle.cols) {
+          board[r][c] = 99;
+        }
+      }
+    }
+
+    // 남은 조각 중 하나를 배치 가능한 위치 탐색
+    for (final piece in _state.availablePieces) {
+      final variants = _allPieceVariants(piece);
+      for (final variant in variants) {
+        for (int r = 0; r < _puzzle.rows; r++) {
+          for (int c = 0; c < _puzzle.cols; c++) {
+            if (_canPlaceOnBoard(board, variant, r, c)) {
+              // 이 위치에 배치하면 나머지도 풀 수 있는지 확인
+              final remaining = _state.availablePieces
+                  .where((p) => p.instanceId != piece.instanceId)
+                  .map((p) => allPieces[p.id]!)
+                  .toList();
+              final testBoard = board.map((row) => List<int>.from(row)).toList();
+              _placeOnBoard(testBoard, variant, r, c, 1);
+              if (remaining.isEmpty || _solveBoard(testBoard, remaining, _puzzle.rows, _puzzle.cols)) {
+                // 힌트 배치
+                setState(() {
+                  _hintUsed = true;
+                  _hintPieceId = piece.instanceId;
+                  _undoStack.add((
+                    placed: List.from(_state.placedPieces),
+                    available: List.from(_state.availablePieces),
+                  ));
+                  final placed = Piece(
+                    id: variant.id,
+                    instanceId: piece.instanceId,
+                    cells: variant.cells,
+                    color: variant.color,
+                  );
+                  final newPlaced = [..._state.placedPieces, PlacedPiece(piece: placed, row: r, col: c)];
+                  final newAvailable = _state.availablePieces
+                      .where((p) => p.instanceId != piece.instanceId)
+                      .toList();
+                  _state = _state.copyWith(placedPieces: newPlaced, availablePieces: newAvailable);
+                  if (_state.isSolved) {
+                    _timer?.cancel();
+                    _state = _state.copyWith(status: GameStatus.success);
+                    SoundService.playSuccess();
+                    ScoreService.saveBest(_puzzle.id, _state.remainingSeconds).then((isNew) {
+                      if (mounted && isNew) setState(() => _isNewRecord = true);
+                    });
+                    _scheduleAutoNext();
+                  }
+                });
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+    // 힌트를 찾지 못한 경우
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.of(context).hintNotFound), duration: const Duration(seconds: 1)),
+      );
+    }
+  }
+
+  bool _canPlaceOnBoard(List<List<int>> board, Piece piece, int row, int col) {
+    for (final c in piece.cells) {
+      final r2 = row + c.row;
+      final c2 = col + c.col;
+      if (r2 < 0 || r2 >= board.length || c2 < 0 || c2 >= board[0].length) return false;
+      if (board[r2][c2] != 0) return false;
+    }
+    return true;
+  }
+
+  void _placeOnBoard(List<List<int>> board, Piece piece, int row, int col, int val) {
+    for (final c in piece.cells) {
+      board[row + c.row][col + c.col] = val;
+    }
+  }
+
+  bool _solveBoard(List<List<int>> board, List<Piece> remaining, int rows, int cols) {
+    if (remaining.isEmpty) {
+      for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+          if (board[r][c] == 0) return false;
+        }
+      }
+      return true;
+    }
+    int fr = -1, fc = -1;
+    outer:
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        if (board[r][c] == 0) { fr = r; fc = c; break outer; }
+      }
+    }
+    if (fr == -1) return false;
+    for (int i = 0; i < remaining.length; i++) {
+      for (final v in _allPieceVariants(remaining[i])) {
+        for (final anchor in v.cells) {
+          final pr = fr - anchor.row;
+          final pc = fc - anchor.col;
+          if (_canPlaceOnBoard(board, v, pr, pc)) {
+            _placeOnBoard(board, v, pr, pc, i + 2);
+            final next = [...remaining]..removeAt(i);
+            if (_solveBoard(board, next, rows, cols)) return true;
+            // undo
+            for (final c in v.cells) board[pr + c.row][pc + c.col] = 0;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  List<Piece> _allPieceVariants(Piece piece) {
+    final seen = <String>{};
+    final result = <Piece>[];
+    Piece cur = piece;
+    for (int flip = 0; flip < 2; flip++) {
+      for (int rot = 0; rot < 4; rot++) {
+        final key = cur.cells.map((c) => '${c.row},${c.col}').join('|');
+        if (seen.add(key)) result.add(cur);
+        cur = cur.rotate();
+      }
+      cur = cur.flip();
+    }
+    return result;
   }
 
   void _scheduleAutoNext() {
@@ -183,35 +344,78 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
-        title: Text(
-          () {
-            final count = _puzzle.pieceIds.length;
-            final diff = count <= 3 ? '쉬움' : count == 4 ? '보통' : '어려움';
-            return '블록피트  ${_currentIndex + 1}/${widget.puzzles.length}  [$diff]${_isPractice ? "  연습" : ""}';
-          }(),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_state.status != GameStatus.playing) {
+          Navigator.pop(context);
+          return;
+        }
+        final leave = await showDialog<bool>(
+          context: context,
+          builder: (_) {
+            final s = S.of(context);
+            return AlertDialog(
+              backgroundColor: const Color(0xFF16213E),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(s.leaveTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              content: Text(s.leaveMsg, style: const TextStyle(color: Colors.white70)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(s.keepPlaying, style: const TextStyle(color: Colors.blueAccent)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                  child: Text(s.leaveBtn),
+                ),
+              ],
+            );
+          },
+        );
+        if (leave == true && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF1A1A2E),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF16213E),
+          title: Text(
+            () {
+              final s = S.of(context);
+              final count = _puzzle.pieceIds.length;
+              final diff = count <= 3 ? s.diffEasy : count == 4 ? s.diffMedium : s.diffHard;
+              return '${s.appName}  ${_currentIndex + 1}/${widget.puzzles.length}  [$diff]${_isPractice ? "  ${s.practice}" : ""}';
+            }(),
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            if (!_isPractice)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: TimerWidget(seconds: _state.remainingSeconds),
+              ),
+            if (_isPractice)
+              const Padding(
+                padding: EdgeInsets.only(right: 12),
+                child: Icon(Icons.self_improvement, color: Colors.greenAccent),
+              ),
+          ],
         ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          if (!_isPractice)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: TimerWidget(seconds: _state.remainingSeconds),
-            ),
-          if (_isPractice)
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: Icon(Icons.self_improvement, color: Colors.greenAccent),
-            ),
-        ],
+        body: Stack(
+          children: [
+            _state.status == GameStatus.playing
+                ? _buildGameBody()
+                : _buildResultOverlay(),
+            ConfettiOverlay(active: _state.status == GameStatus.success),
+            if (!_isPractice && _state.status == GameStatus.playing &&
+                _state.remainingSeconds <= 10)
+              _DangerBorder(seconds: _state.remainingSeconds),
+          ],
+        ),
       ),
-      body: _state.status == GameStatus.playing
-          ? _buildGameBody()
-          : _buildResultOverlay(),
     );
   }
 
@@ -277,9 +481,6 @@ class _GameScreenState extends State<GameScreen> {
                       onRemove: _onRemove,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text('\uBCF4\uB4DC\uC758 \uC870\uAC01\uC744 \uD0ED\uD558\uBA74 \uC81C\uAC70\uB429\uB2C8\uB2E4',
-                      style: TextStyle(color: Colors.white54, fontSize: 11)),
                 ],
               ),
             ),
@@ -301,15 +502,24 @@ class _GameScreenState extends State<GameScreen> {
                         // Undo
                         _ActionBtn(
                           icon: Icons.undo,
-                          label: '되돌리기',
+                          label: S.of(context).undo,
                           enabled: _undoStack.isNotEmpty,
                           onTap: _undo,
+                        ),
+                        const SizedBox(width: 12),
+                        // 힌트
+                        _ActionBtn(
+                          icon: Icons.lightbulb_outline,
+                          label: S.of(context).hint,
+                          enabled: !_hintUsed && _state.availablePieces.isNotEmpty,
+                          onTap: _useHint,
+                          color: Colors.amber,
                         ),
                         const SizedBox(width: 12),
                         // 다시 시작
                         _ActionBtn(
                           icon: Icons.refresh,
-                          label: '다시',
+                          label: S.of(context).restart,
                           enabled: true,
                           onTap: () => setState(_initGame),
                           color: Colors.greenAccent,
@@ -317,8 +527,8 @@ class _GameScreenState extends State<GameScreen> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    const Text('\uD0ED: \uD68C\uC804  |  \uAE38\uAC8C \uD0ED: \uBC18\uC804  |  \uB4DC\uB798\uADF8: \uBC30\uCE58',
-                        style: TextStyle(color: Colors.white54, fontSize: 10)),
+                    Text(S.of(context).tapRotate,
+                        style: const TextStyle(color: Colors.white54, fontSize: 10)),
                     const SizedBox(height: 4),
                     GridView.builder(
                       shrinkWrap: true,
@@ -356,8 +566,12 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildResultOverlay() {
+    final s = S.of(context);
     final success = _state.status == GameStatus.success;
     final hasNext = _currentIndex < widget.puzzles.length - 1;
+    final stars = success
+        ? ScoreService.calcStars(_state.remainingSeconds, _timerSeconds)
+        : 0;
 
     return Center(
       child: Padding(
@@ -366,23 +580,54 @@ class _GameScreenState extends State<GameScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              success ? '\uD83C\uDF89 \uC644\uC131!' : '\u23F0 \uC2DC\uAC04 \uCD08\uACFC!',
+              success ? s.success : s.timeOver,
               style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             if (success) ...[
+              // 별점 애니메이션
+              _AnimatedStars(stars: stars),
+              const SizedBox(height: 8),
+              // 신기록 배지
+              if (_isNewRecord)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 12)],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.emoji_events, color: Colors.white, size: 18),
+                      const SizedBox(width: 6),
+                      Text(s.newRecord,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
               Text(
-                '\uB0A8\uC740 \uC2DC\uAC04: ${_isPractice ? "-" : "${_state.remainingSeconds}\uCD08"}',
+                '${s.remainingTime}: ${_isPractice ? "-" : "${_state.remainingSeconds}s"}',
                 style: const TextStyle(color: Colors.white70, fontSize: 20),
               ),
               const SizedBox(height: 8),
-              Text(
-                hasNext ? '3\uCD08 \uD6C4 \uB2E4\uC74C \uD37C\uC990...' : '\uBAA8\uB4E0 \uD37C\uC990 \uC644\uB8CC!',
-                style: const TextStyle(color: Colors.white54, fontSize: 16),
-              ),
+              if (hasNext)
+                _AutoNextCountdown(
+                  onCancel: () {
+                    _autoNextTimer?.cancel();
+                    setState(() {});
+                  },
+                )
+              else
+                Text(s.allPuzzlesDone,
+                    style: const TextStyle(color: Colors.white54, fontSize: 16)),
             ] else
-              const Text('\uB2E4\uC74C\uC5D4 \uB354 \uBE60\uB974\uAC8C!',
-                  style: TextStyle(color: Colors.white70, fontSize: 18)),
+              Text(s.tryFaster,
+                  style: const TextStyle(color: Colors.white70, fontSize: 18)),
             const SizedBox(height: 32),
             Wrap(
               spacing: 12,
@@ -392,21 +637,30 @@ class _GameScreenState extends State<GameScreen> {
                 ElevatedButton.icon(
                   onPressed: () => setState(_initGame),
                   icon: const Icon(Icons.refresh),
-                  label: const Text('\uB2E4\uC2DC \uB3C4\uC804'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  label: Text(s.retryBtn),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
                 if (success && hasNext)
                   ElevatedButton.icon(
                     onPressed: _goNextPuzzle,
                     icon: const Icon(Icons.arrow_forward),
-                    label: const Text('\uB2E4\uC74C \uD37C\uC990'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                    label: Text(s.nextPuzzle),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ElevatedButton.icon(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.home),
-                  label: const Text('\uBA54\uC778'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+                  label: Text(s.homeBtn),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ],
             ),
@@ -455,6 +709,202 @@ class _ActionBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 화면 테두리 위험 펄스 효과
+class _DangerBorder extends StatefulWidget {
+  final int seconds;
+  const _DangerBorder({required this.seconds});
+
+  @override
+  State<_DangerBorder> createState() => _DangerBorderState();
+}
+
+class _DangerBorderState extends State<_DangerBorder>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.3, end: 0.85).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.red.withValues(alpha: _anim.value),
+              width: 4,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 별점 하나씩 튀어나오는 애니메이션
+class _AnimatedStars extends StatefulWidget {
+  final int stars;
+  const _AnimatedStars({required this.stars});
+
+  @override
+  State<_AnimatedStars> createState() => _AnimatedStarsState();
+}
+
+class _AnimatedStarsState extends State<_AnimatedStars>
+    with TickerProviderStateMixin {
+  final List<AnimationController> _ctrls = [];
+  final List<Animation<double>> _scales = [];
+  final List<Animation<double>> _opacities = [];
+
+  @override
+  void initState() {
+    super.initState();
+    for (int i = 0; i < 3; i++) {
+      final ctrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 400),
+      );
+      _ctrls.add(ctrl);
+      _scales.add(TweenSequence<double>([
+        TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.4), weight: 60),
+        TweenSequenceItem(tween: Tween(begin: 1.4, end: 1.0), weight: 40),
+      ]).animate(CurvedAnimation(parent: ctrl, curve: Curves.easeOut)));
+      _opacities.add(Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: ctrl, curve: const Interval(0.0, 0.4)),
+      ));
+      Future.delayed(Duration(milliseconds: 300 + i * 250), () {
+        if (mounted) ctrl.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(3, (i) => AnimatedBuilder(
+        animation: _ctrls[i],
+        builder: (_, __) => Opacity(
+          opacity: _opacities[i].value,
+          child: Transform.scale(
+            scale: _scales[i].value,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Icon(
+                i < widget.stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: i < widget.stars ? Colors.amber : Colors.white24,
+                size: 52,
+                shadows: i < widget.stars
+                    ? [Shadow(color: Colors.amber.withValues(alpha: 0.6), blurRadius: 16)]
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      )),
+    );
+  }
+}
+
+/// 자동 넘어가기 카운트다운 + 취소 버튼
+class _AutoNextCountdown extends StatefulWidget {
+  final VoidCallback onCancel;
+  const _AutoNextCountdown({required this.onCancel});
+
+  @override
+  State<_AutoNextCountdown> createState() => _AutoNextCountdownState();
+}
+
+class _AutoNextCountdownState extends State<_AutoNextCountdown>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final remaining = (3 - (_ctrl.value * 3)).ceil();
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                value: 1 - _ctrl.value,
+                strokeWidth: 3,
+                backgroundColor: Colors.white12,
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text('$remaining${s.secAfterNext}',
+                style: const TextStyle(color: Colors.white54, fontSize: 15)),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () {
+                _ctrl.stop();
+                widget.onCancel();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Text(s.cancel,
+                    style: const TextStyle(color: Colors.white60, fontSize: 13)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

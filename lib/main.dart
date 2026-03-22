@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'services/settings_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SettingsService.instance.load();
   runApp(const BlockFitApp());
 }
 
 class BlockFitApp extends StatelessWidget {
   const BlockFitApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '블록피트',
+      title: 'BlockFit',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         colorScheme: ColorScheme.dark(
@@ -19,7 +21,7 @@ class BlockFitApp extends StatelessWidget {
           surface: const Color(0xFF1A1A2E),
         ),
       ),
-      home: const HomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }
