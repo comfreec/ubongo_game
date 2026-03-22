@@ -47,6 +47,14 @@ class _GameScreenState extends State<GameScreen> {
   // 정답 보기 애니메이션 진행 중
   bool _isShowingAnswer = false;
 
+  // 날아가는 조각 오버레이 상태
+  _FlyingPieceData? _flyingPiece;
+
+  // 보드 GlobalKey (위치 계산용)
+  final GlobalKey _boardKey = GlobalKey();
+  // 조각 패널 GlobalKey들 (instanceId → key)
+  final Map<String, GlobalKey> _pieceKeys = {};
+
   // 조각 수 기준 타이머
   int get _timerSeconds {
     final count = _puzzle.pieceIds.length;
@@ -89,6 +97,7 @@ class _GameScreenState extends State<GameScreen> {
     _transformedPieces.clear();
     for (final p in pieces) {
       _transformedPieces[p.instanceId] = p;
+      _pieceKeys[p.instanceId] = GlobalKey();
     }
 
     if (!_isPractice) _startTimer();
@@ -206,22 +215,20 @@ class _GameScreenState extends State<GameScreen> {
     _timer?.cancel();
     setState(() {
       _isShowingAnswer = true;
-      // 보드 초기화
       _state = _state.copyWith(placedPieces: [], availablePieces: currentPieces);
     });
 
-    // 조각을 하나씩 0.5초 간격으로 배치
+    // 보드 RenderBox 가져오기
+    await Future.delayed(const Duration(milliseconds: 50));
+
     for (final placement in solution) {
       if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (!mounted) return;
 
-      // instanceId로 조각 찾기
+      // 조각 찾기
       final piece = _state.availablePieces.firstWhere(
         (p) => p.instanceId == placement.instanceId,
         orElse: () => _state.availablePieces.first,
       );
-      // 변형된 셀로 조각 업데이트
       final shapedPiece = Piece(
         id: piece.id,
         instanceId: piece.instanceId,
@@ -229,25 +236,73 @@ class _GameScreenState extends State<GameScreen> {
         color: piece.color,
       );
 
+      // 시작 위치 (조각 패널)
+      Offset startOffset = const Offset(100, 400);
+      final pieceKey = _pieceKeys[piece.instanceId];
+      if (pieceKey?.currentContext != null) {
+        final box = pieceKey!.currentContext!.findRenderObject() as RenderBox?;
+        if (box != null) {
+          startOffset = box.localToGlobal(Offset.zero);
+        }
+      }
+
+      // 끝 위치 (보드 위 목적지)
+      Offset endOffset = const Offset(100, 100);
+      if (_boardKey.currentContext != null) {
+        final boardBox = _boardKey.currentContext!.findRenderObject() as RenderBox?;
+        if (boardBox != null) {
+          final boardOrigin = boardBox.localToGlobal(const Offset(4, 4)); // padding 4
+          final cellSize = boardBox.size.width / _puzzle.cols;
+          endOffset = boardOrigin + Offset(
+            placement.col * cellSize,
+            placement.row * cellSize,
+          );
+        }
+      }
+
+      final pieceWidth = (shapedPiece.maxCol + 1) * 
+          (_boardKey.currentContext != null 
+            ? (_boardKey.currentContext!.findRenderObject() as RenderBox?)?.size.width ?? 300
+            : 300) / _puzzle.cols;
+      final pieceHeight = (shapedPiece.maxRow + 1) * pieceWidth / (shapedPiece.maxCol + 1);
+
+      // 날아가는 조각 표시
+      setState(() {
+        _flyingPiece = _FlyingPieceData(
+          piece: shapedPiece,
+          startOffset: startOffset,
+          endOffset: endOffset,
+          cellSize: pieceWidth / (shapedPiece.maxCol + 1),
+        );
+      });
+
+      // 날아가는 애니메이션 대기
+      await Future.delayed(const Duration(milliseconds: 550));
+      if (!mounted) return;
+
+      // 조각 배치 + 날아가는 조각 제거
       SoundService.playPlace();
       setState(() {
+        _flyingPiece = null;
         final newPlaced = [..._state.placedPieces,
           PlacedPiece(piece: shapedPiece, row: placement.row, col: placement.col)];
         final newAvailable = List<Piece>.from(_state.availablePieces)
           ..removeWhere((p) => p.instanceId == piece.instanceId);
         _state = _state.copyWith(placedPieces: newPlaced, availablePieces: newAvailable);
       });
+
+      await Future.delayed(const Duration(milliseconds: 150));
     }
 
-    // 완료 처리 (별점 없음 - remainingSeconds = 0)
+    // 완료 처리
     if (!mounted) return;
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future.delayed(const Duration(milliseconds: 300));
     setState(() {
       _isShowingAnswer = false;
+      _flyingPiece = null;
       _state = _state.copyWith(status: GameStatus.success, remainingSeconds: 0);
       SoundService.playSuccess();
     });
-    // 정답 보기로 완료 시 자동 넘어가기 없음 - 사용자가 직접 선택
   }
 
   void _scheduleAutoNext() {
@@ -352,6 +407,8 @@ class _GameScreenState extends State<GameScreen> {
             if (!_isPractice && _state.status == GameStatus.playing &&
                 _state.remainingSeconds <= 10)
               _DangerBorder(seconds: _state.remainingSeconds),
+            if (_flyingPiece != null)
+              _FlyingPieceOverlay(data: _flyingPiece!),
           ],
         ),
       ),
@@ -413,6 +470,7 @@ class _GameScreenState extends State<GameScreen> {
                     width: boardW,
                     height: boardH,
                     child: BoardWidget(
+                      key: _boardKey,
                       puzzle: _state.puzzle,
                       placedPieces: _state.placedPieces,
                       cellSize: cellSize,
@@ -482,14 +540,19 @@ class _GameScreenState extends State<GameScreen> {
                       itemBuilder: (context, i) {
                         final piece = _state.availablePieces[i];
                         final current = _transformedPieces[piece.instanceId] ?? piece;
+                        final isFlying = _flyingPiece?.piece.instanceId == piece.instanceId;
+                        _pieceKeys.putIfAbsent(piece.instanceId, () => GlobalKey());
                         return Center(
-                          child: PieceWidget(
-                            key: ValueKey(piece.instanceId),
-                            piece: current,
-                            cellSize: cellSize,
-                            onTransform: (transformed) {
-                              setState(() => _transformedPieces[piece.instanceId] = transformed);
-                            },
+                          child: Opacity(
+                            opacity: isFlying ? 0.0 : 1.0,
+                            child: PieceWidget(
+                              key: _pieceKeys[piece.instanceId],
+                              piece: current,
+                              cellSize: cellSize,
+                              onTransform: (transformed) {
+                                setState(() => _transformedPieces[piece.instanceId] = transformed);
+                              },
+                            ),
                           ),
                         );
                       },
@@ -849,4 +912,155 @@ class _AutoNextCountdownState extends State<_AutoNextCountdown>
       },
     );
   }
+}
+
+// ── 날아가는 조각 데이터 ──
+class _FlyingPieceData {
+  final Piece piece;
+  final Offset startOffset; // 글로벌 좌표
+  final Offset endOffset;   // 글로벌 좌표
+  final double cellSize;
+
+  _FlyingPieceData({
+    required this.piece,
+    required this.startOffset,
+    required this.endOffset,
+    required this.cellSize,
+  });
+}
+
+// ── 날아가는 조각 오버레이 ──
+class _FlyingPieceOverlay extends StatefulWidget {
+  final _FlyingPieceData data;
+  const _FlyingPieceOverlay({required this.data});
+
+  @override
+  State<_FlyingPieceOverlay> createState() => _FlyingPieceOverlayState();
+}
+
+class _FlyingPieceOverlayState extends State<_FlyingPieceOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<Offset> _posAnim;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    );
+
+    _posAnim = Tween<Offset>(
+      begin: widget.data.startOffset,
+      end: widget.data.endOffset,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+
+    _scaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 1.2, end: 0.95), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 20),
+    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = widget.data;
+    final pieceW = (d.piece.maxCol + 1) * d.cellSize;
+    final pieceH = (d.piece.maxRow + 1) * d.cellSize;
+
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) {
+          final pos = _posAnim.value;
+          return Positioned(
+            left: pos.dx,
+            top: pos.dy,
+            child: Transform.scale(
+              scale: _scaleAnim.value,
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: pieceW,
+                height: pieceH,
+                child: CustomPaint(
+                  painter: _FlyingPiecePainter(d.piece, d.cellSize),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FlyingPiecePainter extends CustomPainter {
+  final Piece piece;
+  final double cellSize;
+  _FlyingPiecePainter(this.piece, this.cellSize);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final margin = cellSize * 0.04;
+    final radius = cellSize * 0.18;
+
+    for (final c in piece.cells) {
+      final rect = Rect.fromLTWH(
+        c.col * cellSize + margin,
+        c.row * cellSize + margin,
+        cellSize - margin * 2,
+        cellSize - margin * 2,
+      );
+      final rRect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+
+      // 그림자
+      final shadowPaint = Paint()
+        ..color = Colors.black.withValues(alpha: 0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawRRect(rRect.shift(const Offset(0, 3)), shadowPaint);
+
+      // 조각 색상
+      final hsl = HSLColor.fromColor(piece.color);
+      final highlight = hsl.withLightness((hsl.lightness + 0.25).clamp(0.0, 1.0)).toColor();
+      final shadow = hsl.withLightness((hsl.lightness - 0.2).clamp(0.0, 1.0)).toColor();
+
+      final paint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [highlight, piece.color, shadow],
+          stops: const [0.0, 0.45, 1.0],
+        ).createShader(rect);
+      canvas.drawRRect(rRect, paint);
+
+      // 하이라이트
+      final hlPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.35);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            c.col * cellSize + margin + cellSize * 0.08,
+            c.row * cellSize + margin + cellSize * 0.06,
+            cellSize * 0.35,
+            cellSize * 0.12,
+          ),
+          Radius.circular(cellSize * 0.06),
+        ),
+        hlPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_FlyingPiecePainter old) => false;
 }
