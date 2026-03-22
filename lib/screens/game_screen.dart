@@ -40,10 +40,6 @@ class _GameScreenState extends State<GameScreen> {
   // undo 스택: 각 원소는 (placedPieces, availablePieces) 스냅샷
   final List<({List<PlacedPiece> placed, List<Piece> available})> _undoStack = [];
 
-  // 힌트: 퍼즐당 1회, 힌트로 배치된 조각 instanceId
-  bool _hintUsed = false;
-  String? _hintPieceId; // 힌트 강조 표시용
-
   // 신기록 여부
   bool _isNewRecord = false;
 
@@ -68,8 +64,6 @@ class _GameScreenState extends State<GameScreen> {
   void _initGame() {
     _autoNextTimer?.cancel();
     _undoStack.clear();
-    _hintUsed = false;
-    _hintPieceId = null;
     _isNewRecord = false;
 
     int counter = 0;
@@ -164,151 +158,6 @@ class _GameScreenState extends State<GameScreen> {
         availablePieces: snap.available,
       );
     });
-  }
-
-  /// 힌트: 남은 조각 중 하나를 올바른 위치에 배치
-  void _useHint() {
-    if (_hintUsed || _state.availablePieces.isEmpty) return;
-
-    // 현재 보드 상태 구성
-    final board = List.generate(
-      _puzzle.rows,
-      (r) => List.generate(_puzzle.cols, (c) => _puzzle.grid[r][c] ? 0 : -1),
-    );
-    // 이미 배치된 조각들 마킹
-    for (final pp in _state.placedPieces) {
-      for (final cell in pp.piece.cells) {
-        final r = pp.row + cell.row;
-        final c = pp.col + cell.col;
-        if (r >= 0 && r < _puzzle.rows && c >= 0 && c < _puzzle.cols) {
-          board[r][c] = 99;
-        }
-      }
-    }
-
-    // 남은 조각 중 하나를 배치 가능한 위치 탐색
-    for (final piece in _state.availablePieces) {
-      final variants = _allPieceVariants(piece);
-      for (final variant in variants) {
-        for (int r = 0; r < _puzzle.rows; r++) {
-          for (int c = 0; c < _puzzle.cols; c++) {
-            if (_canPlaceOnBoard(board, variant, r, c)) {
-              // 이 위치에 배치하면 나머지도 풀 수 있는지 확인
-              final remaining = _state.availablePieces
-                  .where((p) => p.instanceId != piece.instanceId)
-                  .map((p) => allPieces[p.id]!)
-                  .toList();
-              final testBoard = board.map((row) => List<int>.from(row)).toList();
-              _placeOnBoard(testBoard, variant, r, c, 1);
-              if (remaining.isEmpty || _solveBoard(testBoard, remaining, _puzzle.rows, _puzzle.cols)) {
-                // 힌트 배치
-                setState(() {
-                  _hintUsed = true;
-                  _hintPieceId = piece.instanceId;
-                  _undoStack.add((
-                    placed: List.from(_state.placedPieces),
-                    available: List.from(_state.availablePieces),
-                  ));
-                  final placed = Piece(
-                    id: variant.id,
-                    instanceId: piece.instanceId,
-                    cells: variant.cells,
-                    color: variant.color,
-                  );
-                  final newPlaced = [..._state.placedPieces, PlacedPiece(piece: placed, row: r, col: c)];
-                  final newAvailable = _state.availablePieces
-                      .where((p) => p.instanceId != piece.instanceId)
-                      .toList();
-                  _state = _state.copyWith(placedPieces: newPlaced, availablePieces: newAvailable);
-                  if (_state.isSolved) {
-                    _timer?.cancel();
-                    _state = _state.copyWith(status: GameStatus.success);
-                    SoundService.playSuccess();
-                    ScoreService.saveBest(_puzzle.id, _state.remainingSeconds).then((isNew) {
-                      if (mounted && isNew) setState(() => _isNewRecord = true);
-                    });
-                    _scheduleAutoNext();
-                  }
-                });
-                return;
-              }
-            }
-          }
-        }
-      }
-    }
-    // 힌트를 찾지 못한 경우
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(S.of(context).hintNotFound), duration: const Duration(seconds: 1)),
-      );
-    }
-  }
-
-  bool _canPlaceOnBoard(List<List<int>> board, Piece piece, int row, int col) {
-    for (final c in piece.cells) {
-      final r2 = row + c.row;
-      final c2 = col + c.col;
-      if (r2 < 0 || r2 >= board.length || c2 < 0 || c2 >= board[0].length) return false;
-      if (board[r2][c2] != 0) return false;
-    }
-    return true;
-  }
-
-  void _placeOnBoard(List<List<int>> board, Piece piece, int row, int col, int val) {
-    for (final c in piece.cells) {
-      board[row + c.row][col + c.col] = val;
-    }
-  }
-
-  bool _solveBoard(List<List<int>> board, List<Piece> remaining, int rows, int cols) {
-    if (remaining.isEmpty) {
-      for (int r = 0; r < rows; r++) {
-        for (int c = 0; c < cols; c++) {
-          if (board[r][c] == 0) return false;
-        }
-      }
-      return true;
-    }
-    int fr = -1, fc = -1;
-    outer:
-    for (int r = 0; r < rows; r++) {
-      for (int c = 0; c < cols; c++) {
-        if (board[r][c] == 0) { fr = r; fc = c; break outer; }
-      }
-    }
-    if (fr == -1) return false;
-    for (int i = 0; i < remaining.length; i++) {
-      for (final v in _allPieceVariants(remaining[i])) {
-        for (final anchor in v.cells) {
-          final pr = fr - anchor.row;
-          final pc = fc - anchor.col;
-          if (_canPlaceOnBoard(board, v, pr, pc)) {
-            _placeOnBoard(board, v, pr, pc, i + 2);
-            final next = [...remaining]..removeAt(i);
-            if (_solveBoard(board, next, rows, cols)) return true;
-            // undo
-            for (final c in v.cells) board[pr + c.row][pc + c.col] = 0;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  List<Piece> _allPieceVariants(Piece piece) {
-    final seen = <String>{};
-    final result = <Piece>[];
-    Piece cur = piece;
-    for (int flip = 0; flip < 2; flip++) {
-      for (int rot = 0; rot < 4; rot++) {
-        final key = cur.cells.map((c) => '${c.row},${c.col}').join('|');
-        if (seen.add(key)) result.add(cur);
-        cur = cur.rotate();
-      }
-      cur = cur.flip();
-    }
-    return result;
   }
 
   void _scheduleAutoNext() {
@@ -505,15 +354,6 @@ class _GameScreenState extends State<GameScreen> {
                           label: S.of(context).undo,
                           enabled: _undoStack.isNotEmpty,
                           onTap: _undo,
-                        ),
-                        const SizedBox(width: 12),
-                        // 힌트
-                        _ActionBtn(
-                          icon: Icons.lightbulb_outline,
-                          label: S.of(context).hint,
-                          enabled: !_hintUsed && _state.availablePieces.isNotEmpty,
-                          onTap: _useHint,
-                          color: Colors.amber,
                         ),
                         const SizedBox(width: 12),
                         // 다시 시작

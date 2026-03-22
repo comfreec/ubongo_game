@@ -44,3 +44,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .vercel
+
+# 서명 키 (절대 커밋하지 말 것)
+android/key.properties
+android/app/blockfit.jks
+*.jks
