@@ -247,7 +247,7 @@ class _GameScreenState extends State<GameScreen> {
       _state = _state.copyWith(status: GameStatus.success, remainingSeconds: 0);
       SoundService.playSuccess();
     });
-    _scheduleAutoNext();
+    // 정답 보기로 완료 시 자동 넘어가기 없음 - 사용자가 직접 선택
   }
 
   void _scheduleAutoNext() {
@@ -593,7 +593,10 @@ class _GameScreenState extends State<GameScreen> {
                     ),
                   ),
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    _autoNextTimer?.cancel();
+                    Navigator.pop(context);
+                  },
                   icon: const Icon(Icons.home),
                   label: Text(s.homeBtn),
                   style: ElevatedButton.styleFrom(
