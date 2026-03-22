@@ -2,6 +2,69 @@ import '../models/piece.dart';
 import '../models/puzzle.dart';
 import 'puzzles.dart';
 
+/// 해답의 배치 정보 (조각 instanceId → (row, col, 변형된 cells))
+class SolvedPlacement {
+  final String instanceId;
+  final int row;
+  final int col;
+  final List<({int row, int col})> cells; // 변형된 셀 좌표
+  SolvedPlacement({required this.instanceId, required this.row, required this.col, required this.cells});
+}
+
+/// 백트래킹으로 퍼즐 해답을 찾아 배치 정보 반환 (없으면 null)
+List<SolvedPlacement>? findSolution(Puzzle puzzle, List<Piece> pieces) {
+  final board = List.generate(
+    puzzle.rows,
+    (r) => List.generate(puzzle.cols, (c) => puzzle.grid[r][c] ? 0 : -1),
+  );
+  final result = <SolvedPlacement>[];
+  if (_solveWithResult(board, pieces, 0, puzzle.rows, puzzle.cols, result)) {
+    return result;
+  }
+  return null;
+}
+
+bool _solveWithResult(List<List<int>> board, List<Piece> remaining, int depth,
+    int rows, int cols, List<SolvedPlacement> result) {
+  if (remaining.isEmpty) {
+    for (int r = 0; r < rows; r++)
+      for (int c = 0; c < cols; c++)
+        if (board[r][c] == 0) return false;
+    return true;
+  }
+  int firstRow = -1, firstCol = -1;
+  outer:
+  for (int r = 0; r < rows; r++) {
+    for (int c = 0; c < cols; c++) {
+      if (board[r][c] == 0) { firstRow = r; firstCol = c; break outer; }
+    }
+  }
+  if (firstRow == -1) return false;
+
+  for (int i = 0; i < remaining.length; i++) {
+    final piece = remaining[i];
+    for (final variant in _allVariants(piece)) {
+      for (final anchor in variant.cells) {
+        final pr = firstRow - anchor.row;
+        final pc = firstCol - anchor.col;
+        if (_canPlace(board, variant, pr, pc, rows, cols)) {
+          _place(board, variant, pr, pc, depth + 1);
+          result.add(SolvedPlacement(
+            instanceId: piece.instanceId,
+            row: pr, col: pc,
+            cells: variant.cells,
+          ));
+          final next = [...remaining]..removeAt(i);
+          if (_solveWithResult(board, next, depth + 1, rows, cols, result)) return true;
+          result.removeLast();
+          _unplace(board, variant, pr, pc);
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /// 백트래킹으로 퍼즐 해답 존재 여부 확인
 bool hasSolution(Puzzle puzzle, List<String> pieceIds) {
   final pieces = pieceIds.map((id) => allPieces[id]!).toList();

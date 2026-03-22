@@ -39,6 +39,8 @@ class S {
   String get secAfterNext => '초 후 다음 퍼즐';
   String get cancel => '취소';
   String get hintNotFound => '힌트를 찾을 수 없습니다';
+  String get showAnswer => '정답 보기';
+  String get showAnswerConfirm => '정답을 보면 이번 퍼즐은 별점 없이 완료됩니다.\n계속할까요?';
   String get leaveTitle => '게임 나가기';
   String get leaveMsg => '진행 중인 게임이 종료됩니다.\n정말 나가시겠어요?';
   String get keepPlaying => '계속하기';

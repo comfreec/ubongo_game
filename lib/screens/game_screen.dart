@@ -5,6 +5,7 @@ import '../models/piece.dart';
 import '../models/puzzle.dart';
 import '../models/game_state.dart';
 import '../data/puzzles.dart';
+import '../data/puzzle_solver.dart';
 import '../widgets/board_widget.dart';
 import '../widgets/piece_widget.dart';
 import '../widgets/timer_widget.dart';
@@ -43,6 +44,9 @@ class _GameScreenState extends State<GameScreen> {
   // 신기록 여부
   bool _isNewRecord = false;
 
+  // 정답 보기 애니메이션 진행 중
+  bool _isShowingAnswer = false;
+
   // 조각 수 기준 타이머
   int get _timerSeconds {
     final count = _puzzle.pieceIds.length;
@@ -65,6 +69,7 @@ class _GameScreenState extends State<GameScreen> {
     _autoNextTimer?.cancel();
     _undoStack.clear();
     _isNewRecord = false;
+    _isShowingAnswer = false;
 
     int counter = 0;
     final pieces = _puzzle.pieceIds.map((id) {
@@ -158,6 +163,91 @@ class _GameScreenState extends State<GameScreen> {
         availablePieces: snap.available,
       );
     });
+  }
+
+  Future<void> _showAnswer() async {
+    // 확인 다이얼로그
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        final s = S.of(context);
+        return AlertDialog(
+          backgroundColor: const Color(0xFF16213E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(s.showAnswer,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Text(s.showAnswerConfirm,
+              style: const TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(s.cancel, style: const TextStyle(color: Colors.blueAccent)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orangeAccent, foregroundColor: Colors.white),
+              child: Text(s.showAnswer),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true || !mounted) return;
+
+    // 현재 배치된 조각 모두 제거하고 솔버 실행
+    final currentPieces = _state.availablePieces.toList()
+      ..addAll(_state.placedPieces.map((pp) => pp.piece));
+
+    final solution = findSolution(_puzzle, currentPieces);
+    if (solution == null || !mounted) return;
+
+    // 타이머 정지
+    _timer?.cancel();
+    setState(() {
+      _isShowingAnswer = true;
+      // 보드 초기화
+      _state = _state.copyWith(placedPieces: [], availablePieces: currentPieces);
+    });
+
+    // 조각을 하나씩 0.5초 간격으로 배치
+    for (final placement in solution) {
+      if (!mounted) return;
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+
+      // instanceId로 조각 찾기
+      final piece = _state.availablePieces.firstWhere(
+        (p) => p.instanceId == placement.instanceId,
+        orElse: () => _state.availablePieces.first,
+      );
+      // 변형된 셀로 조각 업데이트
+      final shapedPiece = Piece(
+        id: piece.id,
+        instanceId: piece.instanceId,
+        cells: placement.cells,
+        color: piece.color,
+      );
+
+      SoundService.playPlace();
+      setState(() {
+        final newPlaced = [..._state.placedPieces,
+          PlacedPiece(piece: shapedPiece, row: placement.row, col: placement.col)];
+        final newAvailable = List<Piece>.from(_state.availablePieces)
+          ..removeWhere((p) => p.instanceId == piece.instanceId);
+        _state = _state.copyWith(placedPieces: newPlaced, availablePieces: newAvailable);
+      });
+    }
+
+    // 완료 처리 (별점 없음 - remainingSeconds = 0)
+    if (!mounted) return;
+    await Future.delayed(const Duration(milliseconds: 400));
+    setState(() {
+      _isShowingAnswer = false;
+      _state = _state.copyWith(status: GameStatus.success, remainingSeconds: 0);
+      SoundService.playSuccess();
+    });
+    _scheduleAutoNext();
   }
 
   void _scheduleAutoNext() {
@@ -352,17 +442,26 @@ class _GameScreenState extends State<GameScreen> {
                         _ActionBtn(
                           icon: Icons.undo,
                           label: S.of(context).undo,
-                          enabled: _undoStack.isNotEmpty,
+                          enabled: _undoStack.isNotEmpty && !_isShowingAnswer,
                           onTap: _undo,
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         // 다시 시작
                         _ActionBtn(
                           icon: Icons.refresh,
                           label: S.of(context).restart,
-                          enabled: true,
+                          enabled: !_isShowingAnswer,
                           onTap: () => setState(_initGame),
                           color: Colors.greenAccent,
+                        ),
+                        const SizedBox(width: 8),
+                        // 정답 보기
+                        _ActionBtn(
+                          icon: Icons.lightbulb_outline,
+                          label: S.of(context).showAnswer,
+                          enabled: !_isShowingAnswer,
+                          onTap: _showAnswer,
+                          color: Colors.orangeAccent,
                         ),
                       ],
                     ),
