@@ -69828,9 +69828,9 @@ A.zh.prototype={
 gKH(){var s,r=this.a.c,q=this.d
 q===$&&A.a()
 s=r[q].e.length
-if(s<=3)return 90
-if(s===4)return 60
-return 45},
+if(s<=3)return 60
+if(s===4)return 90
+return 120},
 ak(){var s=this
 s.aA()
 s.d=s.a.d

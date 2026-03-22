@@ -46,9 +46,9 @@ class _GameScreenState extends State<GameScreen> {
   // 조각 수 기준 타이머
   int get _timerSeconds {
     final count = _puzzle.pieceIds.length;
-    if (count <= 3) return 90;   // 쉬움
-    if (count == 4) return 60;   // 보통
-    return 45;                   // 어려움 (5조각 이상)
+    if (count <= 3) return 60;   // 쉬움
+    if (count == 4) return 90;   // 보통
+    return 120;                  // 어려움 (5조각 이상)
   }
 
   Puzzle get _puzzle => widget.puzzles[_currentIndex];
