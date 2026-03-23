@@ -105,7 +105,7 @@ class _BoardWidgetState extends State<BoardWidget>
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A2E),
+        color: const Color(0xFF8B7355),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -238,7 +238,7 @@ class _BoardCell extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF3D3D5C), Color(0xFF252540)],
+                colors: [Color(0xFFD4C5A9), Color(0xFFBBAD92)],
               ),
               boxShadow: [
                 BoxShadow(
