@@ -1,6 +1,20 @@
 {
   "outputDirectory": "docs",
   "framework": null,
+  "headers": [
+    {
+      "source": "/assets/fonts/(.*)\\.otf",
+      "headers": [{ "key": "Content-Type", "value": "font/otf" }]
+    },
+    {
+      "source": "/assets/fonts/(.*)\\.ttf",
+      "headers": [{ "key": "Content-Type", "value": "font/ttf" }]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ],
   "rewrites": [
     { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
   ]

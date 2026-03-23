@@ -6,6 +6,5 @@ macos/
 windows/
 test/
 tool/
-assets/
 .dart_tool/
 .git/
