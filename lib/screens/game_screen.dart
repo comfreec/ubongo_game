@@ -865,7 +865,7 @@ class _AnimatedStarsState extends State<_AnimatedStars>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Icon(
-                i < widget.stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                i < widget.stars ? Icons.star : Icons.star_border,
                 color: i < widget.stars ? Colors.amber : Colors.white24,
                 size: 52,
                 shadows: i < widget.stars

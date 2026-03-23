@@ -178,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                  const Icon(Icons.star, color: Colors.amber, size: 18),
                   const SizedBox(width: 5),
                   Text(
                     '$_totalStars / ${_allPuzzles.length * 3}',
@@ -200,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen>
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white24),
               ),
-              child: const Icon(Icons.settings_rounded, color: Colors.white60, size: 20),
+              child: const Icon(Icons.settings, color: Colors.white60, size: 20),
             ),
           ),
         ],
@@ -317,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen>
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
             ),
-            child: const Icon(Icons.shuffle_rounded, color: Colors.blueAccent, size: 16),
+            child: const Icon(Icons.shuffle, color: Colors.blueAccent, size: 16),
           ),
         ),
       ],
@@ -483,7 +483,7 @@ class _PuzzleCardState extends State<_PuzzleCard> {
                     border: Border.all(color: const Color(0xFF6BCB77).withValues(alpha: 0.4)),
                   ),
                   child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.check_rounded, color: Color(0xFF6BCB77), size: 11),
+                    Icon(Icons.check, color: Color(0xFF6BCB77), size: 11),
                     SizedBox(width: 3),
                     Text('완료', style: TextStyle(color: Color(0xFF6BCB77), fontSize: 10, fontWeight: FontWeight.bold)),
                   ]),
@@ -505,14 +505,14 @@ class _PuzzleCardState extends State<_PuzzleCard> {
                 Row(children: List.generate(3, (i) => Padding(
                   padding: const EdgeInsets.only(right: 2),
                   child: Icon(
-                    i < widget.stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                    i < widget.stars ? Icons.star : Icons.star_border,
                     color: i < widget.stars ? Colors.amber : Colors.white24, size: 16,
                   ),
                 ))),
               ],
             ])),
             const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: Colors.white.withValues(alpha: 0.25), size: 22),
+            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.25), size: 22),
           ]),
         ),
       ),
