@@ -218,8 +218,9 @@ class _GameScreenState extends State<GameScreen> {
       _state = _state.copyWith(placedPieces: [], availablePieces: currentPieces);
     });
 
-    // 보드 RenderBox 가져오기
-    await Future.delayed(const Duration(milliseconds: 50));
+    // 레이아웃 반영 대기
+    await Future.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
 
     for (final placement in solution) {
       if (!mounted) return;
@@ -236,51 +237,62 @@ class _GameScreenState extends State<GameScreen> {
         color: piece.color,
       );
 
-      // 시작 위치 (조각 패널)
-      Offset startOffset = const Offset(100, 400);
+      // 시작 위치: 조각 패널에서 글로벌 좌표
+      Offset startGlobal = const Offset(80, 500);
       final pieceKey = _pieceKeys[piece.instanceId];
       if (pieceKey?.currentContext != null) {
         final box = pieceKey!.currentContext!.findRenderObject() as RenderBox?;
-        if (box != null) {
-          startOffset = box.localToGlobal(Offset.zero);
+        if (box != null && box.hasSize) {
+          startGlobal = box.localToGlobal(Offset.zero);
         }
       }
 
-      // 끝 위치 (보드 위 목적지)
-      Offset endOffset = const Offset(100, 100);
+      // 끝 위치: 보드에서 글로벌 좌표
+      Offset endGlobal = const Offset(80, 100);
+      double cellSize = 40.0;
       if (_boardKey.currentContext != null) {
         final boardBox = _boardKey.currentContext!.findRenderObject() as RenderBox?;
-        if (boardBox != null) {
-          final boardOrigin = boardBox.localToGlobal(const Offset(4, 4)); // padding 4
-          final cellSize = boardBox.size.width / _puzzle.cols;
-          endOffset = boardOrigin + Offset(
+        if (boardBox != null && boardBox.hasSize) {
+          cellSize = boardBox.size.width / _puzzle.cols;
+          final boardOrigin = boardBox.localToGlobal(const Offset(4, 4));
+          endGlobal = boardOrigin + Offset(
             placement.col * cellSize,
             placement.row * cellSize,
           );
         }
       }
 
-      final pieceWidth = (shapedPiece.maxCol + 1) * 
-          (_boardKey.currentContext != null 
-            ? (_boardKey.currentContext!.findRenderObject() as RenderBox?)?.size.width ?? 300
-            : 300) / _puzzle.cols;
-      final pieceHeight = (shapedPiece.maxRow + 1) * pieceWidth / (shapedPiece.maxCol + 1);
+      final pieceCellSize = cellSize;
 
-      // 날아가는 조각 표시
-      setState(() {
-        _flyingPiece = _FlyingPieceData(
-          piece: shapedPiece,
-          startOffset: startOffset,
-          endOffset: endOffset,
-          cellSize: pieceWidth / (shapedPiece.maxCol + 1),
-        );
-      });
+      // Overlay로 날아가는 조각 표시
+      OverlayEntry? entry;
+      entry = OverlayEntry(
+        builder: (_) => _FlyingPieceOverlay(
+          data: _FlyingPieceData(
+            piece: shapedPiece,
+            startOffset: startGlobal,
+            endOffset: endGlobal,
+            cellSize: pieceCellSize,
+          ),
+          onDone: () => entry?.remove(),
+        ),
+      );
 
-      // 날아가는 애니메이션 대기
-      await Future.delayed(const Duration(milliseconds: 550));
+      // 패널에서 해당 조각 숨김
+      setState(() { _flyingPiece = _FlyingPieceData(
+        piece: shapedPiece,
+        startOffset: startGlobal,
+        endOffset: endGlobal,
+        cellSize: pieceCellSize,
+      ); });
+
+      Overlay.of(context).insert(entry);
+
+      // 애니메이션 시간 대기 (480ms)
+      await Future.delayed(const Duration(milliseconds: 530));
       if (!mounted) return;
 
-      // 조각 배치 + 날아가는 조각 제거
+      // 조각 보드에 배치
       SoundService.playPlace();
       setState(() {
         _flyingPiece = null;
@@ -291,7 +303,7 @@ class _GameScreenState extends State<GameScreen> {
         _state = _state.copyWith(placedPieces: newPlaced, availablePieces: newAvailable);
       });
 
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future.delayed(const Duration(milliseconds: 120));
     }
 
     // 완료 처리
@@ -407,8 +419,6 @@ class _GameScreenState extends State<GameScreen> {
             if (!_isPractice && _state.status == GameStatus.playing &&
                 _state.remainingSeconds <= 10)
               _DangerBorder(seconds: _state.remainingSeconds),
-            if (_flyingPiece != null)
-              _FlyingPieceOverlay(data: _flyingPiece!),
           ],
         ),
       ),
@@ -932,7 +942,8 @@ class _FlyingPieceData {
 // ── 날아가는 조각 오버레이 ──
 class _FlyingPieceOverlay extends StatefulWidget {
   final _FlyingPieceData data;
-  const _FlyingPieceOverlay({required this.data});
+  final VoidCallback onDone;
+  const _FlyingPieceOverlay({required this.data, required this.onDone});
 
   @override
   State<_FlyingPieceOverlay> createState() => _FlyingPieceOverlayState();
@@ -963,7 +974,7 @@ class _FlyingPieceOverlayState extends State<_FlyingPieceOverlay>
       TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 20),
     ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
 
-    _ctrl.forward();
+    _ctrl.forward().then((_) => widget.onDone());
   }
 
   @override
@@ -978,14 +989,14 @@ class _FlyingPieceOverlayState extends State<_FlyingPieceOverlay>
     final pieceW = (d.piece.maxCol + 1) * d.cellSize;
     final pieceH = (d.piece.maxRow + 1) * d.cellSize;
 
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, __) {
-          final pos = _posAnim.value;
-          return Positioned(
-            left: pos.dx,
-            top: pos.dy,
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final pos = _posAnim.value;
+        return Positioned(
+          left: pos.dx,
+          top: pos.dy,
+          child: IgnorePointer(
             child: Transform.scale(
               scale: _scaleAnim.value,
               alignment: Alignment.topLeft,
@@ -997,9 +1008,9 @@ class _FlyingPieceOverlayState extends State<_FlyingPieceOverlay>
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
