@@ -20,7 +20,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2800),
+      duration: const Duration(milliseconds: 5000),
     );
     _particles = [];
     if (widget.active) _launch();
@@ -33,7 +33,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
   }
 
   void _launch() {
-    _particles = List.generate(80, (_) => _Particle(_rng));
+    _particles = List.generate(120, (_) => _Particle(_rng));
     _ctrl.forward(from: 0);
   }
 
@@ -97,7 +97,7 @@ class _ConfettiPainter extends CustomPainter {
       final progress = (t * p.speed).clamp(0.0, 1.0);
       final y = -20 + size.height * 1.1 * progress;
       final x = p.x * size.width + sin(progress * pi * 4 + p.phase) * size.width * p.drift;
-      final opacity = progress < 0.7 ? 1.0 : (1.0 - (progress - 0.7) / 0.3);
+      final opacity = progress < 0.8 ? 1.0 : (1.0 - (progress - 0.8) / 0.2);
       final rot = p.rotation + progress * pi * 3;
 
       final paint = Paint()..color = p.color.withValues(alpha: opacity);
