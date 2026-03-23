@@ -20,6 +20,10 @@ class BlockFitApp extends StatelessWidget {
           primary: Colors.blueAccent,
           surface: const Color(0xFF1A1A2E),
         ),
+        appBarTheme: const AppBarTheme(
+          iconTheme: IconThemeData(color: Colors.white),
+          actionsIconTheme: IconThemeData(color: Colors.white),
+        ),
       ),
       home: const SplashScreen(),
     );

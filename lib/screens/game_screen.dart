@@ -387,6 +387,37 @@ class _GameScreenState extends State<GameScreen> {
         backgroundColor: const Color(0xFF1A1A2E),
         appBar: AppBar(
           backgroundColor: const Color(0xFF16213E),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () async {
+              if (_state.status != GameStatus.playing) {
+                Navigator.pop(context);
+                return;
+              }
+              final s = S.of(context);
+              final leave = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  backgroundColor: const Color(0xFF16213E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Text(s.leaveTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  content: Text(s.leaveMsg, style: const TextStyle(color: Colors.white70)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(s.keepPlaying, style: const TextStyle(color: Colors.blueAccent)),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                      child: Text(s.leaveBtn),
+                    ),
+                  ],
+                ),
+              );
+              if (leave == true && context.mounted) Navigator.pop(context);
+            },
+          ),
           title: Text(
             () {
               final s = S.of(context);
